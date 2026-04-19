@@ -4,8 +4,6 @@
 **Role:** Sr. Software Architect  
 **Classification:** Public  
 
----
-
 ## Table of Contents
 
 1. [Vision & Strategic Intent](#1-vision--strategic-intent)
@@ -22,12 +20,9 @@
 12. [Security Architecture](#12-security-architecture)
 13. [Scalability & Growth Strategy](#13-scalability--growth-strategy)
 14. [Operational Excellence](#14-operational-excellence)
-15. [Cost Architecture](#15-cost-architecture)
-16. [Risks, Constraints & Trade-Offs](#16-risks-constraints--trade-offs)
-17. [Roadmap & Evolution Path](#17-roadmap--evolution-path)
-18. [Appendix — Reference](#18-appendix--reference)
-
----
+15. [Risks, Constraints & Trade-Offs](#15-risks-constraints--trade-offs)
+16. [Roadmap & Evolution Path](#16-roadmap--evolution-path)
+17. [Appendix — Reference](#17-appendix--reference)
 
 ## 1. Vision & Strategic Intent
 
@@ -56,8 +51,6 @@ The deep-space research domain has a distinctive constraint profile:
 
 These constraints drove every major architectural decision: server-side rendering over SPA frameworks, SQLite over managed databases, synthetic fallback over hard failures, and a single-instance deployment over distributed systems.
 
----
-
 ## 2. Platform Overview
 
 The Deep Space Research Platform comprises four interconnected projects published under a single domain:
@@ -66,20 +59,20 @@ The Deep Space Research Platform comprises four interconnected projects publishe
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                     prabhusadasivam.com                                  │
 │                                                                          │
-│  ┌─────────────────────┐  ┌─────────────────────┐  ┌────────────────┐   │
+│  ┌─────────────────────┐  ┌─────────────────────┐  ┌────────────────┐    │
 │  │   Voyager 1 Suite   │  │   3I/ATLAS Research  │  │  Black Hole    │   │
 │  │   6 analysis pages  │  │   Jupyter pipeline   │  │  Simulation    │   │
 │  │   7 API endpoints   │  │   Ephemerides + MAST │  │  Bouncing      │   │
 │  │   11 HTML templates │  │   Orbital elements   │  │  cosmology     │   │
 │  └─────────┬───────────┘  └──────────┬───────────┘  └───────┬────────┘   │
-│            │                         │                       │            │
-│            └─────────────┬───────────┘───────────────────────┘            │
-│                          ▼                                                │
-│              ┌───────────────────────┐                                    │
-│              │    Unified Analytics  │                                    │
-│              │    Database           │                                    │
-│              │    (deep_space_db)    │                                    │
-│              └───────────────────────┘                                    │
+│            │                         │                       │           │
+│            └─────────────┬───────────┘───────────────────────┘           │
+│                          ▼                                               │
+│              ┌───────────────────────┐                                   │
+│              │    Unified Analytics  │                                   │
+│              │    Database           │                                   │
+│              │    (deep_space_db)    │                                   │
+│              └───────────────────────┘                                   │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -89,8 +82,6 @@ The Deep Space Research Platform comprises four interconnected projects publishe
 | **3I/ATLAS Research** | `PSadasivam/3I-ATLAS-research` | Jupyter pipeline for interstellar comet C/2025 N1 (ATLAS): ephemerides, MAST archive queries, orbital elements |
 | **Black Hole Simulation** | `PSadasivam/universe-inside-blackhole` | Bouncing cosmology: Schwarzschild radius of total universe mass using Planck 2018 parameters |
 | **Unified Analytics DB** | `PSadasivam/deep-space-db` | SQLite database consolidating all research data with S3 backup and audit logging |
-
----
 
 ## 3. System Context & Integration Landscape
 
@@ -153,8 +144,6 @@ These principles govern all design decisions across the platform:
 | 6 | **Cost proportional to value** | Research infrastructure should not cost more than the research itself | SQLite (free), single EC2 (~$15/mo), S3 (< $0.01/mo) |
 | 7 | **Operational simplicity over architectural elegance** | One person operates the entire platform | Single process, single instance, systemd restart, git-pull deploys |
 
----
-
 ## 5. Technology Stack & Decision Rationale
 
 ### 5.1 Stack Overview
@@ -191,8 +180,6 @@ The backup script needs exactly three operations: upload, list, download. The AW
 **Why Gunicorn with 2 workers:**  
 Each worker handles one request at a time. Matplotlib is not thread-safe, so `preload_app=True` with sync workers is the correct model. Two workers provide basic concurrency (one can render a plot while the other serves a cached page) without exceeding the 2 GB RAM of a t3.small.
 
----
-
 ## 6. Infrastructure Architecture
 
 ### 6.1 Deployment Topology
@@ -206,38 +193,38 @@ Each worker handles one request at a time. Matplotlib is not thread-safe, so `pr
                             └────┬────┘  CNAME: www → prabhusadasivam.com
                                  │
                     ┌────────────┴────────────┐
-                    │    AWS EC2 t3.small      │
-                    │    Amazon Linux 2023     │
-                    │    Elastic IP attached   │
-                    │                          │
-                    │  ┌────────────────────┐  │
-                    │  │      Nginx         │  │
-                    │  │  :80 → 301 HTTPS   │  │
-                    │  │  :443 → TLS term   │  │
-                    │  │  proxy_pass :8000   │  │
-                    │  │  security headers   │  │
-                    │  │  dotfile deny       │  │
-                    │  └─────────┬──────────┘  │
-                    │            │              │
-                    │  ┌─────────┴──────────┐  │
-                    │  │    Gunicorn        │  │
-                    │  │  127.0.0.1:8000    │  │
-                    │  │  2 sync workers    │  │
-                    │  │  systemd managed   │  │
-                    │  └─────────┬──────────┘  │
-                    │            │              │
-                    │  ┌─────────┴──────────┐  │
-                    │  │  Flask Application │  │
-                    │  │  11 page routes    │  │
-                    │  │  7 API endpoints   │  │
-                    │  │  2 utility routes  │  │
-                    │  └────────────────────┘  │
-                    │                          │
-                    └──────────┬───────────────┘
+                    │    AWS EC2 t3.small     │
+                    │    Amazon Linux 2023    │
+                    │    Elastic IP attached  │
+                    │                         │
+                    │  ┌────────────────────┐ │
+                    │  │      Nginx         │ │
+                    │  │  :80 → 301 HTTPS   │ │
+                    │  │  :443 → TLS term   │ │
+                    │  │  proxy_pass :8000  │ │
+                    │  │  security headers  │ │
+                    │  │  dotfile deny      │ │
+                    │  └─────────┬──────────┘ │
+                    │            │            │
+                    │  ┌─────────┴──────────┐ │
+                    │  │    Gunicorn        │ │
+                    │  │  127.0.0.1:8000    │ │
+                    │  │  2 sync workers    │ │
+                    │  │  systemd managed   │ │
+                    │  └─────────┬──────────┘ │
+                    │            │            │
+                    │  ┌─────────┴──────────┐ │
+                    │  │  Flask Application │ │
+                    │  │  11 page routes    │ │
+                    │  │  7 API endpoints   │ │
+                    │  │  2 utility routes  │ │
+                    │  └────────────────────┘ │
+                    │                         │
+                    └──────────┬──────────────┘
                                │
                     ┌──────────┴───────────────┐
-                    │        AWS S3             │
-                    │  db-backups/ (versioned)  │
+                    │        AWS S3            │
+                    │  db-backups/ (versioned) │
                     └──────────────────────────┘
 ```
 
@@ -297,8 +284,6 @@ proxy_pass http://127.0.0.1:8000;
               ▼
         Gunicorn respawns
 ```
-
----
 
 ## 7. Application Architecture
 
@@ -384,8 +369,6 @@ Facts → Trajectory → Plasma Waves → Density → Magnetometer → 3I/ATLAS
 
 Each page includes "Previous" / "Next" links, creating a guided research narrative through the data.
 
----
-
 ## 8. Data Architecture
 
 ### 8.1 Data Domains
@@ -406,8 +389,8 @@ The analytics database consolidates all domains into 15 tables with consistent d
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                     deep_space_research.db                        │
-│                                                                   │
+│                     deep_space_research.db                       │
+│                                                                  │
 │  VOYAGER 1 (5 tables)          3I/ATLAS (4 tables)               │
 │  ┌────────────────────┐        ┌────────────────────┐            │
 │  │ magnetic_field     │        │ ephemerides        │            │
@@ -416,13 +399,13 @@ The analytics database consolidates all domains into 15 tables with consistent d
 │  │ trajectory         │        │ datasets           │            │
 │  │ events             │        └────────────────────┘            │
 │  └────────────────────┘                                          │
-│                                                                   │
+│                                                                  │
 │  BLACK HOLE (1 table)          SPACE INTEL (2 tables)            │
 │  ┌────────────────────┐        ┌────────────────────┐            │
 │  │ simulations        │        │ neos               │            │
 │  └────────────────────┘        │ solar              │            │
 │                                └────────────────────┘            │
-│                                                                   │
+│                                                                  │
 │  METADATA (3 tables)                                             │
 │  ┌────────────────────┐                                          │
 │  │ research_insights  │  ← cross-project analytical findings     │
@@ -459,8 +442,6 @@ JPL HORIZONS → astroquery → /api/trajectory → JSON
 ```
 
 Every data point can be traced from its NASA/JPL origin through the ingestion pipeline to the database row, identified by the `source` column.
-
----
 
 ## 9. API Design & Contract
 
@@ -512,13 +493,13 @@ The four projects are loosely coupled through three integration mechanisms:
 ```
 ┌──────────────┐    File System     ┌──────────────┐
 │  3I/ATLAS    │ ──── CSVs/JSONs ──►│  deep_space  │
-│  Research    │                     │      _db     │
-└──────┬───────┘                     └──────────────┘
+│  Research    │                     │      _db    │
+└──────┬───────┘                     └─────────────┘
        │                                    ▲
        │ PNGs to Images/                    │ CSVs/JSONs
        ▼                                    │
 ┌──────────────┐                     ┌──────┴───────┐
-│  Voyager 1   │ ──── CSVs ────────►│  Black Hole  │
+│  Voyager 1   │ ──── CSVs ────────►│  Black Hole   │
 │  Web App     │                     │  Simulation  │
 └──────────────┘                     └──────────────┘
        │
@@ -543,8 +524,6 @@ Projects are deliberately **not microservices**. A monolithic Flask application 
 - Adding a new research project is a single Flask route + template — no new infrastructure
 
 This will be revisited if the platform requires multi-team development or independent scaling (see §17).
-
----
 
 ## 11. Resilience & Graceful Degradation
 
@@ -575,8 +554,6 @@ The synthetic data generators are not test mocks — they are mathematically gro
 ### 11.3 Resilience Principle
 
 > **The platform renders every page, every time.** No combination of external failures produces a user-facing error. The quality of data may degrade (real → cached → synthetic), but the experience never breaks.
-
----
 
 ## 12. Security Architecture
 
@@ -676,8 +653,6 @@ These are architectural invariants that hold regardless of scale:
 - **Graceful degradation** — synthetic fallback remains the failure strategy
 - **Standard SQL** — no ORM, no SQLite-specific syntax, migration-ready at all times
 
----
-
 ## 14. Operational Excellence
 
 ### 14.1 Deployment Model
@@ -711,48 +686,9 @@ These are architectural invariants that hold regardless of scale:
 | Uptime | Not monitored | Add external health check |
 | Data freshness | `ingested_at` column queryable | No automated staleness alerts |
 
----
+## 15. Risks, Constraints & Trade-Offs
 
-## 15. Cost Architecture
-
-### 15.1 Monthly Operating Cost
-
-| Component | Service | Cost |
-|-----------|---------|------|
-| Compute | EC2 t3.small (on-demand) | ~$15.00 |
-| Storage | EBS (8 GB gp3) | ~$0.64 |
-| Static IP | Elastic IP (attached) | $0.00 |
-| Backup | S3 (< 1 MB current) | < $0.01 |
-| DNS | GoDaddy domain | ~$1.50 (amortized) |
-| TLS | Let's Encrypt | $0.00 |
-| Database | SQLite (local file) | $0.00 |
-| **Total** | | **~$17/month** |
-
-### 15.2 Cost Optimization Opportunities
-
-| Optimization | Savings | Trade-Off |
-|-------------|---------|-----------|
-| Reserved Instance (1-year) | ~40% on EC2 (~$9/mo) | Upfront commitment |
-| Spot Instance | ~70% on EC2 (~$5/mo) | Possible interruption |
-| S3 Intelligent-Tiering | Negligible at current scale | Complexity |
-| Graviton (t4g) instance | ~20% | ARM compatibility testing needed |
-
-### 15.3 Cost Scaling Model
-
-The architecture has a **flat cost curve** until scaling triggers are hit:
-
-| Users | Infrastructure Change | Incremental Cost |
-|-------|----------------------|------------------|
-| 1–50 | None | $0 |
-| 50–200 | Larger instance (t3.medium) | +$15/mo |
-| 200–1000 | ALB + 2 instances + CloudFront | +$50/mo |
-| 1000+ | Multi-AZ + RDS + ElastiCache | +$200/mo |
-
----
-
-## 16. Risks, Constraints & Trade-Offs
-
-### 16.1 Architectural Trade-Offs
+### 15.1 Architectural Trade-Offs
 
 | Decision | What We Gain | What We Accept |
 |----------|-------------|---------------|
@@ -764,7 +700,7 @@ The architecture has a **flat cost curve** until scaling triggers are hit:
 | Manual deployment | No CI/CD infrastructure to maintain | Human error risk; slower deploy cycle |
 | 2 Gunicorn workers | Fits t3.small memory | Limited concurrent request handling |
 
-### 16.2 Technical Debt Register
+### 15.2 Technical Debt Register
 
 | Item | Severity | Effort | Impact if Unaddressed |
 |------|:--------:|:------:|----------------------|
@@ -775,7 +711,7 @@ The architecture has a **flat cost curve** until scaling triggers are hit:
 | Root AWS credentials in use | **High** | Low | Over-privileged access; security risk |
 | No database encryption at rest | Low | Low | Acceptable — no PII or classified data |
 
-### 16.3 Constraints
+### 15.3 Constraints
 
 | Constraint | Source | Impact |
 |-----------|--------|--------|
@@ -785,9 +721,7 @@ The architecture has a **flat cost curve** until scaling triggers are hit:
 | EC2 t3.small 2 GB RAM | Instance type | Limits Gunicorn workers and in-memory data |
 | No PII in scope | Data classification | Simplifies security requirements significantly |
 
----
-
-## 17. Roadmap & Evolution Path
+## 16. Roadmap & Evolution Path
 
 ### Phase 1 — Foundation (Complete)
 
@@ -829,9 +763,7 @@ The architecture has a **flat cost curve** until scaling triggers are hit:
 - [ ] Flask Blueprints for project-specific modules
 - [ ] Multi-AZ deployment for high availability
 
----
-
-## 18. Appendix — Reference
+## 17. Appendix — Reference
 
 ### A. Repository Map
 
