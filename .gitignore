@@ -1,0 +1,16 @@
+# deep_space_db .gitignore
+
+# SQLite database files (contain operational data — do not commit)
+*.db
+*.db-wal
+*.db-shm
+*.db.restore
+*.db.pre-restore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
