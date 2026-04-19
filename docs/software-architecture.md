@@ -1,7 +1,6 @@
-# Deep Space Research Platform — Software Architecture
+# Prabhu's Deep Space Research Platform — System Design & Technical Architecture: Vision to Execution
 
 **Author:** Prabhu Sadasivam  
-**Role:** Sr. Software Architect  
 **Classification:** Public  
 
 ## Table of Contents
