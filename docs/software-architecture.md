@@ -1,4 +1,6 @@
-# Prabhu's Deep Space Research Platform — System Design & Technical Architecture: Vision to Execution
+# Deep Space Research Platform — System Design & Technical Architecture
+
+*Vision to Execution*
 
 **Author:** Prabhu Sadasivam  
 **Classification:** Public  
