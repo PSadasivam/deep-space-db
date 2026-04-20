@@ -1,7 +1,8 @@
 # Deep Space Research — Security Threat Model
 
 **Author:** Prabhu Sadasivam  
-**Classification:** Public   
+**Classification:** Public  
+**Last Updated:** 2026-04-20 — Expanded scope to cover full platform after portal separation (DSR-042)
 
 ## Table of Contents
 
@@ -17,27 +18,38 @@
 10. [Dependency & Supply Chain Security](#10-dependency--supply-chain-security)
 11. [Incident Response](#11-incident-response)
 12. [Security Checklist for Public Repository](#12-security-checklist-for-public-repository)
+13. [Web Portal Threat Model (deep_space_portal)](#13-web-portal-threat-model-deep_space_portal)
 
 ## 1. Scope & System Boundaries
 
-This threat model covers the **deep_space_db** subsystem — a local SQLite analytics database with S3 backup. It does NOT cover the Flask web application (`voyager1_web_app.py`) or the EC2 deployment, which have their own security postures.
+This threat model covers two subsystems of the Deep Space Research platform:
+
+1. **deep_space_db** — A local SQLite analytics database with S3 backup (Sections 1–12)
+2. **deep_space_portal** — The public-facing Flask web application deployed on AWS EC2 (Section 13)
+
+Both subsystems and their GitHub repositories are **public**.
 
 ### In Scope
 
-| Component | Description |
-|-----------|-------------|
-| `schema.sql` | DDL definitions for 15 tables |
-| `init_db.py` | Schema creation + data ingestion from CSV/JSON/computed |
-| `s3_backup.py` | S3 backup, list, and restore operations |
-| `deep_space_research.db` | SQLite database file (local, not committed) |
-| S3 bucket | Remote backup storage (`S3_BACKUP_BUCKET` env var) |
-| Upstream data files | CSVs, JSONs from sibling project directories |
+| Component | Subsystem | Description |
+|-----------|-----------|-------------|
+| `schema.sql` | deep_space_db | DDL definitions for 15 tables |
+| `init_db.py` | deep_space_db | Schema creation + data ingestion from CSV/JSON/computed |
+| `s3_backup.py` | deep_space_db | S3 backup, list, and restore operations |
+| `deep_space_research.db` | deep_space_db | SQLite database file (local, not committed) |
+| S3 bucket | deep_space_db | Remote backup storage (`S3_BACKUP_BUCKET` env var) |
+| Upstream data files | deep_space_db | CSVs, JSONs from sibling project directories |
+| `app.py` | deep_space_portal | Flask web application (12 routes, 7 API endpoints) |
+| `templates/` | deep_space_portal | 12 HTML templates served via Jinja2 |
+| Nginx + Gunicorn | deep_space_portal | Reverse proxy and WSGI server on EC2 |
+| EC2 instance | deep_space_portal | AWS EC2 t3.small running Amazon Linux 2023 |
+| Let's Encrypt TLS | deep_space_portal | HTTPS termination via Certbot |
+| `sys.path` imports | deep_space_portal | Portal imports science modules from sibling `voyager1-analysis` |
 
 ### Out of Scope
 
-- Flask web application and its API endpoints
-- EC2 instance, Nginx, HTTPS/TLS configuration
-- GitHub repository access controls
+- Voyager 1 science modules (pure computational code, no network exposure)
+- 3I-Atlas-Research, universe-inside-blackhole (offline analysis, no deployment)
 - User workstation security
 
 ## 2. Data Flow Diagram
@@ -372,3 +384,191 @@ Before publishing `deep_space_db` as a public GitHub repository:
 - Run `git log --all -p | grep -iE "AKIA|aws_secret|password|token"` to verify no secrets in Git history
 - Enable GitHub secret scanning on the repository
 - Enable Dependabot alerts (minimal surface since no dependencies, but good practice)
+
+## 13. Web Portal Threat Model (deep_space_portal)
+
+*Added 2026-04-20 after portal separation (DSR-042, ref PSadasivam/deep-space-portal#1).*
+
+The portal is a **public-facing Flask web application** deployed on AWS EC2, serving 12 HTML pages and 7 API endpoints at `https://prabhusadasivam.com`. The GitHub repository `PSadasivam/deep-space-portal` is also public.
+
+### 13.1 Portal Architecture
+
+```
+                         Internet
+                            │
+                     ┌──────┴──────┐
+                     │   Certbot   │  HTTPS termination (Let's Encrypt)
+                     │   + Nginx   │  Reverse proxy, security headers
+                     │   :443/:80  │  HTTP→HTTPS redirect
+                     └──────┬──────┘
+                            │ proxy_pass http://127.0.0.1:8000
+                     ┌──────┴──────┐
+                     │  Gunicorn   │  WSGI server, 2 workers
+                     │  :8000      │  Bound to 127.0.0.1 only
+                     └──────┬──────┘
+                            │
+                     ┌──────┴──────┐
+                     │   app.py    │  Flask app
+                     │  (portal)   │
+                     └──┬─────┬────┘
+                        │     │
+              sys.path  │     │  HTTPS
+              import    │     │
+         ┌──────┴───┐  │  ┌──┴──────────┐
+         │ voyager1- │  │  │ NASA APIs   │
+         │ analysis  │  │  │ (external)  │
+         │ (sibling) │  │  └─────────────┘
+         └───────────┘  │
+                        │  File system
+                 ┌──────┴──────┐
+                 │   Images/   │
+                 │   (static)  │
+                 └─────────────┘
+```
+
+### 13.2 Portal Trust Boundaries
+
+| Boundary | From → To | Protocol | Authentication |
+|----------|-----------|----------|----------------|
+| **TB-P1: Internet → Nginx** | Browser → EC2 | HTTPS (TLS 1.2+) | None (public site) |
+| **TB-P2: Nginx → Gunicorn** | Reverse proxy → WSGI | HTTP (loopback) | Loopback only |
+| **TB-P3: Flask → Science modules** | `app.py` → `voyager1-analysis/` | `sys.path` import | File system permissions |
+| **TB-P4: Flask → NASA APIs** | `app.py` → `api.nasa.gov` | HTTPS | NASA API key (query param) |
+| **TB-P5: Flask → File system** | `/images/<path:filename>` → `Images/` | `send_from_directory` | Flask path checks |
+
+### 13.3 Portal Threat Analysis (STRIDE)
+
+#### Spoofing
+
+| ID | Threat | Likelihood | Impact | Status |
+|----|--------|:----------:|:------:|--------|
+| WS-1 | Attacker impersonates the site (domain hijacking, DNS poisoning) | Low | High | Mitigated: HTTPS via Certbot; DNSSEC recommended |
+| WS-2 | Cross-origin request triggering API endpoints (CSRF) | Medium | Medium | **Open**: No CSRF protection; GET-based APIs can be triggered via `<img>` tags |
+
+#### Tampering
+
+| ID | Threat | Likelihood | Impact | Status |
+|----|--------|:----------:|:------:|--------|
+| WT-1 | CDN resource poisoning (KaTeX JS/CSS from jsdelivr) | Low | **High** | **Open**: No Subresource Integrity (SRI) hashes on CDN scripts |
+| WT-2 | Man-in-the-middle between portal and NASA APIs | Very Low | Medium | Mitigated: HTTPS for all NASA API calls |
+| WT-3 | Science module shadowing via `sys.path.insert(0, ...)` | Low | **High** | **Open**: Sibling dir at position 0 can shadow stdlib modules |
+| WT-4 | Deployment script overwrites Certbot SSL config | Medium | High | Mitigated: Deploy script now preserves existing Certbot configs |
+
+#### Repudiation
+
+| ID | Threat | Likelihood | Impact | Status |
+|----|--------|:----------:|:------:|--------|
+| WR-1 | No access logging for API requests | Medium | Medium | Partial: Gunicorn logs to systemd journal; no structured app-level audit log |
+
+#### Information Disclosure
+
+| ID | Threat | Likelihood | Impact | Status |
+|----|--------|:----------:|:------:|--------|
+| WI-1 | Werkzeug debugger exposed if `app.py` run directly | Low (prod uses Gunicorn) | **Critical** | **Open**: `debug=True` in `app.run()` enables interactive Python shell |
+| WI-2 | Error messages leak file paths and library versions | Medium | Low | **Open**: API error responses include raw `str(e)` |
+| WI-3 | `.git/` directory accessible via HTTP | Low | Medium | Mitigated: Nginx `location ~ /\. { deny all; }` |
+| WI-4 | Public GitHub repo exposes source code and infrastructure details | N/A | Low | Accepted: Intentionally public; no secrets in code |
+| WI-5 | NASA API key logged in server access logs (query parameter) | Medium | Low | Accepted: `DEMO_KEY` is public; custom key should use env var |
+
+#### Denial of Service
+
+| ID | Threat | Likelihood | Impact | Status |
+|----|--------|:----------:|:------:|--------|
+| WD-1 | API endpoint abuse (expensive matplotlib/NASA computations) | **High** | **High** | **Open**: No rate limiting in Flask or Nginx |
+| WD-2 | Large request body flooding | Low | Medium | Partial: Nginx default `client_max_body_size` 1MB; no explicit limit set |
+| WD-3 | Slowloris / connection exhaustion | Medium | Medium | Partial: Gunicorn has worker timeout; no Nginx `limit_conn` |
+
+#### Elevation of Privilege
+
+| ID | Threat | Likelihood | Impact | Status |
+|----|--------|:----------:|:------:|--------|
+| WE-1 | Path traversal via `/images/<path:filename>` | Low | **High** | **Open**: `<path:>` accepts slashes; `send_from_directory` has protections but fragile with dynamic base dir |
+| WE-2 | Gunicorn runs as `ec2-user` without systemd sandboxing | Medium | High | **Open**: No `ProtectSystem`, `NoNewPrivileges`, `PrivateTmp` directives |
+| WE-3 | EC2 compromise via web app pivots to S3 credentials | Low | **Critical** | Mitigated: S3 credentials should be scoped IAM (see §8.2 Risk E-1) |
+
+### 13.4 Portal Controls in Place
+
+| Control | Implementation | Protects Against |
+|---------|----------------|------------------|
+| **HTTPS (TLS)** | Let's Encrypt via Certbot, auto-renewal | Man-in-the-middle (WT-2, WS-1) |
+| **HTTP→HTTPS redirect** | Certbot-managed Nginx config | Cleartext interception |
+| **X-Frame-Options: DENY** | Nginx header | Clickjacking |
+| **X-Content-Type-Options: nosniff** | Nginx header | MIME-type sniffing attacks |
+| **Referrer-Policy** | `strict-origin-when-cross-origin` | Referrer leakage |
+| **Dotfile blocking** | Nginx `location ~ /\. { deny all; }` | `.git/`, `.env` exposure (WI-3) |
+| **Gunicorn loopback binding** | `--bind 127.0.0.1:8000` | Direct Gunicorn access from internet |
+| **SSH restricted** | Security group limits port 22 to operator IP | Unauthorized SSH access |
+| **No credentials in code** | All secrets via env vars or `~/.aws/` | Credential leakage (WI-4) |
+| **`.gitignore`** | Excludes `.env`, `*.pem`, `*.db`, `venv/` | Secrets committed to public repo |
+| **No pickle/eval/exec** | Not used anywhere in portal code | Deserialization attacks |
+| **No forms / no user input storage** | Read-only display of NASA data | Stored XSS, SQL injection |
+| **NASA API escaping** | `esc()` helper in `space-intelligence.html` | XSS from upstream API data |
+
+### 13.5 Portal Vulnerability Summary & Remediation Plan
+
+| # | Severity | Finding | Remediation | Priority |
+|---|:--------:|---------|-------------|:--------:|
+| 1 | **Critical** | `debug=True` + `host='0.0.0.0'` in `app.run()` | Guard with env var: `debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'` | **P0** |
+| 2 | **Critical** | Path traversal risk in `/images/<path:filename>` | Validate filename rejects `..`; use `app.root_path` for base dir | **P0** |
+| 3 | **High** | No `SECRET_KEY` configured | Set via env var: `app.secret_key = os.environ['SECRET_KEY']` | **P1** |
+| 4 | **High** | No CSRF protection | Add `flask-wtf` + `CSRFProtect(app)` | **P1** |
+| 5 | **High** | No rate limiting on expensive API endpoints | Add `flask-limiter` (10 req/min on `/api/*`); add `limit_req_zone` in Nginx | **P1** |
+| 6 | **High** | CDN scripts without SRI integrity hashes | Add `integrity="sha384-..."` and `crossorigin="anonymous"` to KaTeX resources | **P1** |
+| 7 | **Medium** | `innerHTML` with unescaped API data in templates | Extend `esc()` pattern to all templates; prefer `textContent` | P2 |
+| 8 | **Medium** | `sys.path.insert(0, ...)` module shadowing | Change to `sys.path.append()` or use `pip install -e` | P2 |
+| 9 | **Medium** | Missing CSP, HSTS, Permissions-Policy headers | Add `Content-Security-Policy`, `Strict-Transport-Security`, `Permissions-Policy` in Nginx | P2 |
+| 10 | **Medium** | No Nginx rate limiting (`limit_req_zone`) | Add rate limiting to Nginx for `/api/` locations | P2 |
+| 11 | **Medium** | All 11 Python dependencies unpinned | Run `pip freeze > requirements.txt`; enable Dependabot | P2 |
+| 12 | **Low** | Error messages leak internal paths/versions | Return generic error messages; log full details server-side | P3 |
+| 13 | **Low** | Systemd service lacks hardening directives | Add `ProtectSystem=strict`, `NoNewPrivileges=true`, `PrivateTmp=true` | P3 |
+| 14 | **Low** | NASA `DEMO_KEY` fallback logged in query params | Use header-based auth or suppress key from access logs | P3 |
+
+### 13.6 Portal Incident Response
+
+#### Web Application Compromise
+
+```
+1. IMMEDIATELY: sudo systemctl stop deep_space_portal
+2. Preserve evidence: sudo journalctl -u deep_space_portal > /tmp/portal_incident.log
+3. Check for unauthorized modifications:
+   cd ~/deep-space-portal && git status && git diff
+4. Check for unauthorized processes:
+   ps aux | grep -E 'python|gunicorn|nc|curl|wget'
+5. Rotate any credentials:
+   - Flask SECRET_KEY
+   - NASA API key
+   - SSH key if EC2 compromise suspected
+6. Redeploy from known-good state:
+   git checkout main && git pull origin main
+   sudo systemctl start deep_space_portal
+7. Review Nginx access logs:
+   sudo cat /var/log/nginx/access.log | grep -E '4[0-9]{2}|5[0-9]{2}'
+```
+
+#### SSL Certificate Compromise
+
+```
+1. Revoke certificate: sudo certbot revoke --cert-name prabhusadasivam.com
+2. Delete and re-issue: sudo certbot delete --cert-name prabhusadasivam.com
+3. Re-obtain: sudo certbot --nginx -d prabhusadasivam.com -d www.prabhusadasivam.com
+4. Verify: sudo certbot certificates
+```
+
+### 13.7 Public Repository Checklist (deep-space-portal)
+
+- [x] **No credentials in source code** — verified across all `.py`, `.html`, `.sh` files
+- [x] **No SSH keys or PEM files** — excluded via `.gitignore`
+- [x] **No `.env` files committed** — excluded via `.gitignore`
+- [x] **No IP addresses in tracked files** — EC2 IP not in source
+- [x] **No database files committed** — excluded via `.gitignore`
+- [x] **Dotfiles blocked by Nginx** — `.git/`, `.env` return 404
+- [x] **HTTPS enforced** — Certbot with HTTP→HTTPS redirect
+- [x] **Gunicorn bound to loopback** — `127.0.0.1:8000`, not `0.0.0.0`
+- [ ] **`debug=True` removed from production code** — *pending remediation (P0)*
+- [ ] **Path traversal hardened** — *pending remediation (P0)*
+- [ ] **Rate limiting configured** — *pending remediation (P1)*
+- [ ] **Dependencies pinned** — *pending remediation (P2)*
+- [ ] **CSP header added** — *pending remediation (P2)*
+- [ ] **SRI hashes on CDN resources** — *pending remediation (P1)*
+- [ ] **GitHub secret scanning enabled** — *pending operator action*
+- [ ] **Dependabot alerts enabled** — *pending operator action*
