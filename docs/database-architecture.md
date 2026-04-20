@@ -1,5 +1,8 @@
 # Deep Space Research — Unified Analytics Database
 
+**Author:** Prabhu Sadasivam  
+**Classification:** Public 
+
 ## Technical Architecture Document
 
 ## Table of Contents
