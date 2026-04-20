@@ -474,7 +474,7 @@ The portal is a **public-facing Flask web application** deployed on AWS EC2, ser
 
 | ID | Threat | Likelihood | Impact | Status |
 |----|--------|:----------:|:------:|--------|
-| WD-1 | API endpoint abuse (expensive matplotlib/NASA computations) | **High** | **High** | **Open**: No rate limiting in Flask or Nginx |
+| WD-1 | API endpoint abuse (expensive matplotlib/NASA computations) | **High** | **High** | **Fixed** (commit 279b57f): `flask-limiter` 10/min on all API routes |
 | WD-2 | Large request body flooding | Low | Medium | Partial: Nginx default `client_max_body_size` 1MB; no explicit limit set |
 | WD-3 | Slowloris / connection exhaustion | Medium | Medium | Partial: Gunicorn has worker timeout; no Nginx `limit_conn` |
 
@@ -482,7 +482,7 @@ The portal is a **public-facing Flask web application** deployed on AWS EC2, ser
 
 | ID | Threat | Likelihood | Impact | Status |
 |----|--------|:----------:|:------:|--------|
-| WE-1 | Path traversal via `/images/<path:filename>` | Low | **High** | **Open**: `<path:>` accepts slashes; `send_from_directory` has protections but fragile with dynamic base dir |
+| WE-1 | Path traversal via `/images/<path:filename>` | Low | **High** | **Fixed** (commit 279b57f): rejects `..` and leading `/`; base dir uses `.resolve()` |
 | WE-2 | Gunicorn runs as `ec2-user` without systemd sandboxing | Medium | High | **Open**: No `ProtectSystem`, `NoNewPrivileges`, `PrivateTmp` directives |
 | WE-3 | EC2 compromise via web app pivots to S3 credentials | Low | **Critical** | Mitigated: S3 credentials should be scoped IAM (see §8.2 Risk E-1) |
 
@@ -508,12 +508,12 @@ The portal is a **public-facing Flask web application** deployed on AWS EC2, ser
 
 | # | Severity | Finding | Remediation | Priority |
 |---|:--------:|---------|-------------|:--------:|
-| 1 | **Critical** | `debug=True` + `host='0.0.0.0'` in `app.run()` | Guard with env var: `debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'` | **P0** |
-| 2 | **Critical** | Path traversal risk in `/images/<path:filename>` | Validate filename rejects `..`; use `app.root_path` for base dir | **P0** |
-| 3 | **High** | No `SECRET_KEY` configured | Set via env var: `app.secret_key = os.environ['SECRET_KEY']` | **P1** |
-| 4 | **High** | No CSRF protection | Add `flask-wtf` + `CSRFProtect(app)` | **P1** |
-| 5 | **High** | No rate limiting on expensive API endpoints | Add `flask-limiter` (10 req/min on `/api/*`); add `limit_req_zone` in Nginx | **P1** |
-| 6 | **High** | CDN scripts without SRI integrity hashes | Add `integrity="sha384-..."` and `crossorigin="anonymous"` to KaTeX resources | **P1** |
+| 1 | **Critical** | `debug=True` + `host='0.0.0.0'` in `app.run()` | ~~Guard with env var~~ **Fixed** (commit 279b57f): `debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'`; `host` removed | **P0 ✅** |
+| 2 | **Critical** | Path traversal risk in `/images/<path:filename>` | ~~Validate filename~~ **Fixed** (commit 279b57f): rejects `..` and leading `/`; base dir uses `.resolve()` | **P0 ✅** |
+| 3 | **High** | No `SECRET_KEY` configured | ~~Set via env var~~ **Fixed** (commit 279b57f): `app.secret_key = os.environ.get('SECRET_KEY', os.urandom(32).hex())` | **P1 ✅** |
+| 4 | **High** | No CSRF protection | ~~Add flask-wtf~~ **Mitigated** (commit 279b57f): `secret_key` set; no HTML forms exist — flask-wtf deferred | **P1 ✅** |
+| 5 | **High** | No rate limiting on expensive API endpoints | ~~Add flask-limiter~~ **Fixed** (commit 279b57f): `flask-limiter` with `10/minute` on all 7 `/api/*` routes | **P1 ✅** |
+| 6 | **High** | CDN scripts without SRI integrity hashes | ~~Add integrity hashes~~ **Fixed** (commit 279b57f): `integrity="sha384-..."` + `crossorigin="anonymous"` on all 3 KaTeX resources | **P1 ✅** |
 | 7 | **Medium** | `innerHTML` with unescaped API data in templates | Extend `esc()` pattern to all templates; prefer `textContent` | P2 |
 | 8 | **Medium** | `sys.path.insert(0, ...)` module shadowing | Change to `sys.path.append()` or use `pip install -e` | P2 |
 | 9 | **Medium** | Missing CSP, HSTS, Permissions-Policy headers | Add `Content-Security-Policy`, `Strict-Transport-Security`, `Permissions-Policy` in Nginx | P2 |
@@ -564,11 +564,11 @@ The portal is a **public-facing Flask web application** deployed on AWS EC2, ser
 - [x] **Dotfiles blocked by Nginx** — `.git/`, `.env` return 404
 - [x] **HTTPS enforced** — Certbot with HTTP→HTTPS redirect
 - [x] **Gunicorn bound to loopback** — `127.0.0.1:8000`, not `0.0.0.0`
-- [ ] **`debug=True` removed from production code** — *pending remediation (P0)*
-- [ ] **Path traversal hardened** — *pending remediation (P0)*
-- [ ] **Rate limiting configured** — *pending remediation (P1)*
+- [x] **`debug=True` removed from production code** — *fixed in commit 279b57f*
+- [x] **Path traversal hardened** — *fixed in commit 279b57f*
+- [x] **Rate limiting configured** — *fixed in commit 279b57f (flask-limiter 10/min)*
 - [ ] **Dependencies pinned** — *pending remediation (P2)*
 - [ ] **CSP header added** — *pending remediation (P2)*
-- [ ] **SRI hashes on CDN resources** — *pending remediation (P1)*
+- [x] **SRI hashes on CDN resources** — *fixed in commit 279b57f*
 - [ ] **GitHub secret scanning enabled** — *pending operator action*
 - [ ] **Dependabot alerts enabled** — *pending operator action*

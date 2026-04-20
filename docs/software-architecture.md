@@ -590,8 +590,11 @@ Layer 3: Nginx
 └── /api/ disallowed in robots.txt
 
 Layer 4: Application
-├── Flask debug=False in production
-├── SECRET_KEY via environment variable
+├── Flask debug mode off by default (env-var gated)
+├── SECRET_KEY via environment variable (secure random fallback)
+├── flask-limiter: 10 req/min on all /api/* endpoints
+├── Path traversal blocked: rejects '..' in image filenames
+├── SRI integrity hashes on all CDN resources (KaTeX)
 ├── No user input to SQL queries (read-only web interface)
 ├── Parameterized SQL in all ingestion scripts
 └── NASA API key via environment variable
