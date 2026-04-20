@@ -54,18 +54,24 @@ These constraints drove every major architectural decision: server-side renderin
 
 ## 2. Platform Overview
 
-The Deep Space Research Platform comprises four interconnected projects published under a single domain:
+The Deep Space Research Platform comprises five interconnected projects published under a single domain:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                     prabhusadasivam.com                                  │
 │                                                                          │
-│  ┌─────────────────────┐  ┌─────────────────────┐  ┌────────────────┐    │
-│  │   Voyager 1 Suite   │  │   3I/ATLAS Research  │  │  Black Hole    │   │
-│  │   6 analysis pages  │  │   Jupyter pipeline   │  │  Simulation    │   │
-│  │   7 API endpoints   │  │   Ephemerides + MAST │  │  Bouncing      │   │
-│  │   11 HTML templates │  │   Orbital elements   │  │  cosmology     │   │
-│  └─────────┬───────────┘  └──────────┬───────────┘  └───────┬────────┘   │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │                  Deep Space Portal                                │   │
+│  │   Flask web app · 12 HTML templates · 7 API endpoints            │   │
+│  │   Nginx reverse proxy · Gunicorn WSGI · AWS deployment           │   │
+│  └─────────┬────────────────────┬───────────────────────┬───────────┘   │
+│            │                    │                       │               │
+│  ┌─────────┴───────────┐ ┌─────┴───────────────┐ ┌────┴────────────┐   │
+│  │   Voyager 1 Suite   │ │  3I/ATLAS Research   │ │  Black Hole     │   │
+│  │   4 analysis modules│ │  Jupyter pipeline    │ │  Simulation     │   │
+│  │   Trajectory, PWS,  │ │  Ephemerides + MAST  │ │  Bouncing       │   │
+│  │   Density, Magneto  │ │  Orbital elements    │ │  cosmology      │   │
+│  └─────────┬───────────┘ └──────────┬───────────┘ └───────┬────────┘   │
 │            │                         │                       │           │
 │            └─────────────┬───────────┘───────────────────────┘           │
 │                          ▼                                               │
@@ -79,7 +85,8 @@ The Deep Space Research Platform comprises four interconnected projects publishe
 
 | Project | Repository | Purpose |
 |---------|-----------|---------|
-| **Voyager 1 Analysis** | `PSadasivam/voyager1-analysis` | Flask web app + scientific analysis: trajectory, plasma waves, electron density, magnetometer, space intelligence |
+| **Deep Space Portal** | `PSadasivam/deep-space-portal` | Flask web application, HTML templates, nginx config, deployment infrastructure — presentation layer for all research projects |
+| **Voyager 1 Analysis** | `PSadasivam/voyager1-analysis` | Scientific analysis modules: trajectory, plasma waves, electron density, magnetometer — pure computation, no web dependencies |
 | **3I/ATLAS Research** | `PSadasivam/3I-ATLAS-research` | Jupyter pipeline for interstellar comet C/2025 N1 (ATLAS): ephemerides, MAST archive queries, orbital elements |
 | **Black Hole Simulation** | `PSadasivam/universe-inside-blackhole` | Bouncing cosmology: Schwarzschild radius of total universe mass using Planck 2018 parameters |
 | **Unified Analytics DB** | `PSadasivam/deep-space-db` | SQLite database consolidating all research data with S3 backup and audit logging |
@@ -216,7 +223,8 @@ Each worker handles one request at a time. Matplotlib is not thread-safe, so `pr
                     │            │            │
                     │  ┌─────────┴──────────┐ │
                     │  │  Flask Application │ │
-                    │  │  11 page routes    │ │
+                    │  │  (deep_space_portal)│ │
+                    │  │  12 page routes    │ │
                     │  │  7 API endpoints   │ │
                     │  │  2 utility routes  │ │
                     │  └────────────────────┘ │
@@ -260,7 +268,7 @@ proxy_pass http://127.0.0.1:8000;
                       │
                       ▼
               systemd starts
-            voyager1.service
+         deep_space_portal.service
                       │
                       ▼
               Gunicorn spawns
@@ -489,7 +497,7 @@ API endpoints never return HTTP 5xx. The degradation hierarchy is:
 
 ### 10.1 Integration Architecture
 
-The four projects are loosely coupled through three integration mechanisms:
+The five projects are loosely coupled through four integration mechanisms:
 
 ```
 ┌──────────────┐    File System     ┌──────────────┐
@@ -500,29 +508,32 @@ The four projects are loosely coupled through three integration mechanisms:
        │ PNGs to Images/                    │ CSVs/JSONs
        ▼                                    │
 ┌──────────────┐                     ┌──────┴───────┐
-│  Voyager 1   │ ──── CSVs ────────►│  Black Hole   │
-│  Web App     │                     │  Simulation  │
+│  Voyager 1   │ ◄── imports ───────│  Deep Space   │
+│  (science)   │                     │  Portal       │
 └──────────────┘                     └──────────────┘
-       │
-       │ Serves all pages under one domain
-       ▼
-  prabhusadasivam.com
+       │                                    │
+       │                                    │ Serves all pages under one domain
+       ▼                                    ▼
+  Analysis outputs              prabhusadasivam.com
 ```
 
 | Mechanism | Pattern | Example |
 |-----------|---------|---------|
 | **File-system sharing** | Sibling directories under `C:\Deep-Space-Research\` | `init_db.py` reads `../3I-Atlas-Research/ephemerides.csv` |
-| **Presentation integration** | Flask renders templates for all projects | `/atlas`, `/blackhole`, `/mars` pages in Voyager 1 app |
+| **Python path import** | Portal adds `../voyager1_project` to `sys.path` | `from voyager1_magneticfield_nTS_analysis import fetch_ephemeris` |
+| **Presentation integration** | Portal Flask renders templates for all projects | `/atlas`, `/blackhole`, `/mars` pages in portal app |
 | **Analytical integration** | `research_insights` table links findings across domains | "Voyager 1 measures the interstellar medium that 3I/ATLAS traveled through" |
 
 ### 10.2 Integration Design Rationale
 
-Projects are deliberately **not microservices**. A monolithic Flask application serves all pages because:
+Projects are deliberately **not microservices**. A monolithic Flask application (the portal) serves all pages because:
 
 - There is one operator, one deployment target, one domain
 - Cross-project pages share navigation, styling, and SEO configuration
 - The complexity cost of inter-service communication exceeds the benefit at this scale
 - Adding a new research project is a single Flask route + template — no new infrastructure
+
+The key architectural improvement is that **science modules are now decoupled from presentation**. Voyager 1 analysis scripts can be used as CLI tools, imported into Jupyter notebooks, or called by the portal — without carrying Flask/Gunicorn dependencies.
 
 This will be revisited if the platform requires multi-team development or independent scaling (see §17).
 
@@ -770,6 +781,7 @@ These are architectural invariants that hold regardless of scale:
 
 | Repository | URL | Branch |
 |-----------|-----|--------|
+| Deep Space Portal | `github.com/PSadasivam/deep-space-portal` | `main` |
 | Voyager 1 Analysis | `github.com/PSadasivam/voyager1-analysis` | `main` |
 | 3I/ATLAS Research | `github.com/PSadasivam/3I-ATLAS-research` | `main` |
 | Black Hole Simulation | `github.com/PSadasivam/universe-inside-blackhole` | `main` |
@@ -792,9 +804,10 @@ These are architectural invariants that hold regardless of scale:
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `voyager1.nginx.conf` | `voyager1_project/` | Nginx reverse proxy + security headers |
+| `deep_space_portal.nginx.conf` | `deep_space_portal/` | Nginx reverse proxy + security headers |
 | `voyager1.service` | `/etc/systemd/system/` (EC2) | systemd service definition |
-| `requirements.txt` | `voyager1_project/` | Python dependencies |
+| `requirements.txt` | `deep_space_portal/` | Web + science dependencies |
+| `requirements.txt` | `voyager1_project/` | Science-only dependencies |
 | `schema.sql` | `deep_space_db/` | Database DDL |
 | `.gitignore` | `deep_space_db/` | Excludes .db, WAL, .env |
 
@@ -804,5 +817,5 @@ These are architectural invariants that hold regardless of scale:
 |----------|----------|-------|
 | Database Architecture | `deep_space_db/docs/database-architecture.md` | Schema design, ingestion, queries, scalability |
 | Security Threat Model | `deep_space_db/docs/security-threat-model.md` | STRIDE analysis, controls, incident response |
-| AWS Deployment Guide | `voyager1_project/docs/aws-deployment.md` | EC2 setup, Nginx, Certbot, systemd |
+| AWS Deployment Guide | `deep_space_portal/docs/aws-deployment.md` | EC2 setup, Nginx, Certbot, systemd |
 | Getting Started | `voyager1_project/docs/getting-started.md` | Local development setup |
