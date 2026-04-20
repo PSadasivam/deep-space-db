@@ -570,5 +570,5 @@ The portal is a **public-facing Flask web application** deployed on AWS EC2, ser
 - [ ] **Dependencies pinned** — *pending remediation (P2)*
 - [ ] **CSP header added** — *pending remediation (P2)*
 - [x] **SRI hashes on CDN resources** — *fixed in commit 279b57f*
-- [ ] **GitHub secret scanning enabled** — *pending operator action*
-- [ ] **Dependabot alerts enabled** — *pending operator action*
+- [x] **GitHub secret scanning enabled** — *enabled with push protection on all 3 repos*
+- [x] **Dependabot alerts enabled** — *enabled on all 3 repos*
