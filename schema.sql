@@ -203,6 +203,93 @@ CREATE INDEX IF NOT EXISTS idx_insight_proj ON research_insights(project);
 CREATE INDEX IF NOT EXISTS idx_insight_cat ON research_insights(category);
 
 -- ============================================================
+-- BASELINE: Historical corpus for Signal Engine percentile()
+-- See deep_space_db/docs/historical-baseline-plan.md
+-- ============================================================
+
+-- Planetary Kp index (NOAA SWPC), 3-hourly cadence, back to 1932 via GFZ archive
+CREATE TABLE IF NOT EXISTS baseline_kp_index (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp_utc   TEXT    NOT NULL,           -- ISO-8601, start of 3-hr window
+    kp_value        REAL    NOT NULL,           -- 0.0 .. 9.0
+    a_index         REAL,                       -- daily Ap if available
+    storm_class     TEXT,                       -- G1..G5 if applicable, else NULL
+    source          TEXT    DEFAULT 'noaa_swpc',
+    ingested_at     TEXT    DEFAULT (datetime('now')),
+    UNIQUE(timestamp_utc)
+);
+CREATE INDEX IF NOT EXISTS idx_baseline_kp_ts ON baseline_kp_index(timestamp_utc);
+CREATE INDEX IF NOT EXISTS idx_baseline_kp_val ON baseline_kp_index(kp_value);
+
+-- GOES X-ray flux (NOAA SWPC / NCEI), 1-min cadence, GOES-15 onward
+CREATE TABLE IF NOT EXISTS baseline_goes_xray (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp_utc   TEXT    NOT NULL,           -- ISO-8601, 1-min cadence
+    flux_long       REAL    NOT NULL,           -- W/m^2, 0.1-0.8 nm band
+    flux_short      REAL,                       -- W/m^2, 0.05-0.4 nm band (optional)
+    satellite       TEXT,                       -- e.g. GOES-16, GOES-18
+    flare_class     TEXT,                       -- A/B/C/M/X derived; NULL during quiet sun
+    flare_magnitude REAL,                       -- e.g. 5.2 for an M5.2 flare
+    source          TEXT    DEFAULT 'noaa_swpc',
+    ingested_at     TEXT    DEFAULT (datetime('now')),
+    UNIQUE(timestamp_utc, satellite)
+);
+CREATE INDEX IF NOT EXISTS idx_baseline_xray_ts ON baseline_goes_xray(timestamp_utc);
+CREATE INDEX IF NOT EXISTS idx_baseline_xray_flux ON baseline_goes_xray(flux_long);
+CREATE INDEX IF NOT EXISTS idx_baseline_xray_class ON baseline_goes_xray(flare_class) WHERE flare_class IS NOT NULL;
+
+-- JPL SBDB close-approach archive (one row per encounter)
+CREATE TABLE IF NOT EXISTS baseline_neo_close_approach (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    object_designation  TEXT    NOT NULL,        -- e.g. "(2024 BX1)"
+    object_full_name    TEXT,
+    cd_utc              TEXT    NOT NULL,        -- close-approach date/time UTC
+    miss_distance_au    REAL    NOT NULL,
+    miss_distance_lunar REAL,                    -- miss in lunar distances
+    relative_velocity_kms REAL,
+    diameter_min_m      REAL,
+    diameter_max_m      REAL,
+    h_magnitude         REAL,                    -- absolute magnitude
+    is_pha              INTEGER DEFAULT 0,       -- Potentially Hazardous Asteroid flag
+    body                TEXT    DEFAULT 'Earth',
+    source              TEXT    DEFAULT 'jpl_sbdb',
+    ingested_at         TEXT    DEFAULT (datetime('now')),
+    UNIQUE(object_designation, cd_utc, body)
+);
+CREATE INDEX IF NOT EXISTS idx_baseline_neo_date ON baseline_neo_close_approach(cd_utc);
+CREATE INDEX IF NOT EXISTS idx_baseline_neo_miss ON baseline_neo_close_approach(miss_distance_au);
+CREATE INDEX IF NOT EXISTS idx_baseline_neo_pha ON baseline_neo_close_approach(is_pha) WHERE is_pha = 1;
+
+-- Space-Track decay (re-entry) records
+CREATE TABLE IF NOT EXISTS baseline_satellite_decay (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    norad_cat_id    INTEGER NOT NULL,
+    object_name     TEXT,
+    object_type     TEXT,                       -- PAYLOAD | ROCKET BODY | DEBRIS | UNKNOWN
+    country         TEXT,
+    launch_date     TEXT,
+    decay_date      TEXT    NOT NULL,
+    rcs_size        TEXT,                       -- SMALL | MEDIUM | LARGE
+    orbit_regime    TEXT,                       -- LEO | MEO | GEO | HEO | derived
+    source          TEXT    DEFAULT 'spacetrack',
+    ingested_at     TEXT    DEFAULT (datetime('now')),
+    UNIQUE(norad_cat_id)
+);
+CREATE INDEX IF NOT EXISTS idx_baseline_decay_date ON baseline_satellite_decay(decay_date);
+CREATE INDEX IF NOT EXISTS idx_baseline_decay_orbit ON baseline_satellite_decay(orbit_regime);
+
+-- Per-source ingest state (high-water marks for idempotent delta jobs)
+CREATE TABLE IF NOT EXISTS baseline_ingest_state (
+    source_key      TEXT    PRIMARY KEY,        -- 'kp' | 'goes_xray' | 'neo_ca' | 'satellite_decay'
+    last_ingested_utc TEXT,                     -- newest timestamp_utc successfully ingested
+    last_run_utc    TEXT,
+    last_status     TEXT,                       -- ok | partial | error
+    last_message    TEXT,
+    rows_total      INTEGER DEFAULT 0,
+    updated_at      TEXT    DEFAULT (datetime('now'))
+);
+
+-- ============================================================
 -- METADATA: Ingestion Log
 -- ============================================================
 CREATE TABLE IF NOT EXISTS ingestion_log (
